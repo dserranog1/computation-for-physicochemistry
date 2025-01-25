@@ -1,20 +1,43 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-AVOGADRO = 6.022e23  # Número de Avogadro
+initial_concentrations = [
+    25e-12,  # TF
+    1.0e-8,  # VII
+    0.0,  # TF-VII
+    1.0e-10,  # VIIa
+    0.0,  # TF-VIIa
+    0.0,  # Xa
+    0.0,  # IIa
+    1.6e-7,  # X
+    0.0,  # TF-VIIa-X
+    0.0,  # TF-VIIa-Xa
+    9.0e-8,  # IX
+    0.0,  # TF-VIIa-IX
+    0.0,  # IXa
+    1.4e-6,  # II
+    0.7e-9,  # VIII
+    0.0,  # VIIIa
+    0.0,  # IXa-VIIIa
+    0.0,  # IXa-VIIIa-X
+    0.0,  # VIIIa1L
+    0.0,  # VIIIa2
+    2.0e-8,  # V
+    0.0,  # Va
+    0.0,  # Xa-Va
+    0.0,  # Xa-Va-II
+    0.0,  # mIIa
+    2.5e-9,  # TFPI
+    0.0,  # Xa-TFPI
+    0.0,  # TF-VIIa-Xa-TFPI
+    3.4e-6,  # ATIII
+    0.0,  # Xa-ATIII
+    0.0,  # mIIa-ATIII
+    0.0,  # IXa-ATIII
+    0.0,  # IIa-ATIII
+    0.0,  # TF-VIIa-ATIII
+]
 
-
-# Función para traducir concentraciones iniciales a números de moléculas
-def concentrations_to_molecules(concentrations):
-    """
-    Convierte concentraciones iniciales (mol/L) a números de moléculas discretos.
-
-    """
-
-    return [200 if i % 2 == 0 else 50 for i, _ in enumerate(concentrations)]
-
-
-# Definir las reacciones
 reactions = [
     {
         "reactants": {0: 1, 1: 1},
@@ -229,124 +252,120 @@ reactions = [
 ]
 
 
-initial_concentrations = [
-    25e-12,  # TF
-    1.0e-8,  # VII
-    0.0,  # TF-VII
-    1.0e-10,  # VIIa
-    0.0,  # TF-VIIa
-    0.0,  # Xa
-    0.0,  # IIa
-    1.6e-7,  # X
-    0.0,  # TF-VIIa-X
-    0.0,  # TF-VIIa-Xa
-    9.0e-8,  # IX
-    0.0,  # TF-VIIa-IX
-    0.0,  # IXa
-    1.4e-6,  # II
-    0.7e-9,  # VIII
-    0.0,  # VIIIa
-    0.0,  # IXa-VIIIa
-    0.0,  # IXa-VIIIa-X
-    0.0,  # VIIIa1L
-    0.0,  # VIIIa2
-    2.0e-8,  # V
-    0.0,  # Va
-    0.0,  # Xa-Va
-    0.0,  # Xa-Va-II
-    0.0,  # mIIa
-    2.5e-9,  # TFPI
-    0.0,  # Xa-TFPI
-    0.0,  # TF-VIIa-Xa-TFPI
-    3.4e-6,  # ATIII
-    0.0,  # Xa-ATIII
-    0.0,  # mIIa-ATIII
-    0.0,  # IXa-ATIII
-    0.0,  # IIa-ATIII
-    0.0,  # TF-VIIa-ATIII
-]
+class Gillespie:
+    def __init__(
+        self, initial_concentrations, reactions_with_k, number_of_molecules, max_time
+    ):
+        self.number_of_molecules = number_of_molecules
+        self.max_time = max_time
+        self.initial_concentrations = initial_concentrations
+        self.initial_molecules = self.concentrations_to_molecules(
+            initial_concentrations
+        )
+        self.reactions = self.translate_k_to_kappa(reactions_with_k)
 
-# Traducir a números de moléculas
-initial_molecules = concentrations_to_molecules(initial_concentrations)
+    def concentrations_to_molecules(self, concentrations):
+        total_concentration = sum(concentrations)
 
+        return [
+            round(concentration / total_concentration * self.number_of_molecules)
+            for concentration in concentrations
+        ]
 
-# Algoritmo de Gillespie
-def gillespie_algorithm(reactions, initial_molecules, max_time):
-    """
-    Implementa el método de Gillespie para simular reacciones estocásticas.
-
-    Parameters:
-    - reactions: lista de reacciones con reactantes, productos y constantes.
-    - initial_molecules: lista del número inicial de moléculas por especie.
-    - max_time: tiempo máximo de simulación (s).
-
-    Returns:
-    - times: lista de tiempos en los que ocurren eventos.
-    - states: lista del estado del sistema (número de moléculas) en cada tiempo.
-    """
-    # Inicializar variables
-    time = 0
-    molecules = initial_molecules[:]
-    times = [time]
-    states = [molecules[:]]
-
-
-    while time < max_time:
-        # Calcular tasas de reacción (a_i)
-        a = []
+    def translate_k_to_kappa(self, reactions):
         for reaction in reactions:
-            rate = reaction["rate_constant"]
-            for reactant, count in reaction["reactants"].items():
-                if molecules[reactant] < count:
-                    rate = 0  # Si no hay suficientes moléculas, la reacción no puede ocurrir
-                    break
-                rate *= molecules[reactant]
-            a.append(rate)
+            kappa = self.translate_rate_constant(reaction)
+            reaction["kappa"] = kappa
+        return reactions
 
-        # Tasa total de reacción
-        a_total = sum(a)
-        if a_total == 0:
-            break  # No hay más reacciones posibles
+    def translate_rate_constant(self, reaction):
+        k = reaction["rate_constant"]
+        reactants = list(reaction["reactants"].keys())
+        num_reactants = sum(
+            reaction["reactants"].values()
+        )  # Total reactant stoichiometry
+        if num_reactants == 1:
+            # Unimolecular reaction: no adjustment needed
+            return k
+        elif num_reactants == 2:
+            ca0 = self.initial_concentrations[reactants[0]]
+            ma0 =  self.initial_molecules[reactants[0]]
+            if ma0 == 0: # handle division by 0
+                return 0
+            return (
+                k
+                * ca0
+                / ma0
+            )  # kappa = k * CA0 / MA0
+        else:
+            raise ValueError(
+                "Reactions with more than 2 reactants are not supported in this implementation."
+            )
 
-        # Determinar tiempo hasta el próximo evento
-        r1 = np.random.random()
-        delta_t = -np.log(r1) / a_total
-        time += delta_t
+    def calculate_propensities(self, molecules):
+        propensities = []
+        for reaction in self.reactions:
+            propensity = reaction["kappa"]
+            for reactant in reaction["reactants"].keys():
+                propensity *= molecules[reactant]
 
-        # Elegir qué reacción ocurre
-        r2 = np.random.random() * a_total
-        cumulative = 0
-        for i, rate in enumerate(a):
-            cumulative += rate
-            if r2 <= cumulative:
-                chosen_reaction = reactions[i]
+            propensities.append(propensity)
+        return propensities
+
+    def get_tau(self, a_total):
+        return np.random.exponential(1 / a_total)
+
+    def simulate(self):
+        time = 0
+        molecules = self.initial_molecules[:]
+        times = [time]
+        states = [molecules[:]]
+
+        while time < self.max_time:
+            propensities = self.calculate_propensities(molecules)
+            a_total = sum(propensities)
+            if a_total <= 0:
                 break
 
-        # Actualizar el estado del sistema
-        for reactant, count in chosen_reaction["reactants"].items():
-            molecules[reactant] -= count
-        for product, count in chosen_reaction["products"].items():
-            molecules[product] += count
+            # Calculate next reaction time
+            tau = self.get_tau(a_total)
+            time += tau
 
-        # Registrar el estado y tiempo
-        times.append(time)
-        states.append(molecules[:])
+            # Select reaction
+            r = np.random.random() * a_total
+            cumulative = 0
+            for i, a_i in enumerate(propensities):
+                cumulative += a_i
+                if r <= cumulative:
+                    # Update molecule counts
+                    for species, count in reactions[i]["reactants"].items():
+                        molecules[species] -= count
+                    for species, count in reactions[i]["products"].items():
+                        molecules[species] += count
+                    break
 
-    return times, states
+            # Store results
+            times.append(time)
+            states.append(molecules[:])
+
+        return times, states
 
 
-# Ejecutar la simulación
-max_simulation_time = 1e-3  # Tiempo máximo de simulación en segundos
-times, states = gillespie_algorithm(reactions, initial_molecules, max_simulation_time)
-
-print(times)
-# Graficar los resultados
-states = np.array(states)
-plt.figure(figsize=(25, 10))
-for i in range(len(initial_molecules)):
-    plt.plot(times, states[:, i], label=f"x[{i}]")
-plt.xlabel("Tiempo (s)")
-plt.ylabel("Número de moléculas")
-plt.title("Simulación del método de Gillespie")
-plt.legend()
-plt.show()
+if __name__ == "__main__":
+    gillespie = Gillespie(
+        initial_concentrations=initial_concentrations,
+        reactions_with_k=reactions,
+        number_of_molecules=1000000,
+        max_time=1000,
+    )
+    times, states = gillespie.simulate()
+    plt.figure(figsize=(15, 8))
+    for i in range(len(gillespie.initial_molecules)):
+        if any(state[i] > 0 for state in states):  # Only plot species that change
+            plt.plot(times, [state[i] for state in states], label=f"Species {i}")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Molecule Count")
+    plt.title("Blood Coagulation Gillespie Simulation")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.tight_layout()
+    plt.show()
