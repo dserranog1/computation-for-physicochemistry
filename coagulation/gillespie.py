@@ -313,7 +313,8 @@ class Gillespie:
         return propensities
 
     def get_tau(self, a_total):
-        return np.random.exponential(1 / a_total)
+        chi = np.random.rand()
+        return (-np.log(chi) / a_total) / 1000000
 
     def simulate(self):
         time = 0
@@ -356,7 +357,7 @@ if __name__ == "__main__":
         initial_concentrations=initial_concentrations,
         reactions_with_k=reactions,
         number_of_molecules=1000000,
-        max_time=1000,
+        max_time=10000000,
     )
     times, states = gillespie.simulate()
     plt.figure(figsize=(15, 8))
