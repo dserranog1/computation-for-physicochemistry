@@ -281,9 +281,7 @@ class Gillespie:
     def translate_rate_constant(self, reaction):
         k = reaction["rate_constant"]
         reactants = list(reaction["reactants"].keys())
-        num_reactants = sum(
-            reaction["reactants"].values()
-        )  # Total reactant stoichiometry
+        num_reactants = len(reactants)  # Total reactant stoichiometry
         if num_reactants == 1:
             # Unimolecular reaction: no adjustment needed
             return k
